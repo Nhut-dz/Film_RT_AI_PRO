@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Weld RT AI</title>
+  <link rel="stylesheet" href="/ui/style.css">
+  <script src="/ui/vendor/vue-3.5.13.global.prod.js"></script>
+</head>
+<body>
+<div id="app"></div>
+<!-- Template để trong script (không qua parser HTML) để giữ chữ hoa của thuộc tính SVG như viewBox -->
+<script type="text/x-template" id="app-tpl">
+<div>
+  <header class="topbar">
+    <div>
+      <h1>Weld RT AI</h1>
+      <p class="sub">Phát hiện khuyết tật trên phim RT mối hàn</p>
+    </div>
+    <div class="status" v-if="models">
+      <span class="pill ok">{{ models.device.toUpperCase() }}</span>
+      <span class="pill" v-for="d in models.detectors" :key="d">{{ d }}</span>
+      <span class="pill" :class="models.classifier ? '' : 'off'">ResNet50</span>
+      <span class="pill" :class="models.layout ? '' : 'off'">Vùng film</span>
+      <span class="pill" :class="models.ocr ? '' : 'off'">OCR</span>
+    </div>
+    <div class="status" v-else-if="modelsError"><span class="pill err">Server lỗi: {{ modelsError }}</span></div>
+  </header>
+
+  <main class="layout">
+    <section class="panel controls">
+      <label class="drop" :class="{ over: dragOver }" @dragover.prevent="dragOver = true" @dragleave="dragOver = false" @drop.prevent="onDrop">
+        <input type="file" accept="image/*" @change="onPick" hidden>
+        <strong>{{ file ? file.name : 'Chọn hoặc kéo thả ảnh film' }}</strong>
+        <span>JPG, PNG, BMP, TIFF</span>
+      </label>
+
+      <label class="field">Detector khuyết tật
+        <select v-model="detector">
+          <option v-for="d in (models ? models.detectors : [])" :key="d" :value="d">{{ d }}</option>
+        </select>
+      </label>
+
+      <label class="field">Ngưỡng hiển thị: <b>{{ (threshold * 100).toFixed(0) }}%</b>
+        <input type="range" :min="floor" max="0.95" step="0.01" v-model.number="threshold">
+        <small>Tối thiểu {{ (floor * 100).toFixed(0) }}%. Kéo để lọc nhanh, không cần chạy lại.</small>
+      </label>
+
+      <div class="checks">
+        <label><input type="checkbox" v-model="showLayout"> Vùng film / thông tin</label>
+        <label><input type="checkbox" v-model="showLabels"> Nhãn %</label>
+      </div>
+
+      <button class="primary" :disabled="!file || busy || !models" @click="run">
+        {{ busy ? 'Đang nhận diện…' : 'Nhận diện' }}
+      </button>
+      <p class="error" v-if="error">{{ error }}</p>
+
+      <div class="summary" v-if="result">
+        <h2>Tổng quan</h2>
+        <div class="counts">
+          <div v-for="(n, c) in counts" :key="c" class="count">
+            <i :style="{ background: color(c) }"></i><span>{{ c }}</span><b>{{ n }}</b>
+          </div>
+          <div v-if="!Object.keys(counts).length" class="muted">Không có khuyết tật ≥ {{ (threshold * 100).toFixed(0) }}%</div>
+        </div>
+        <p class="muted small">{{ result.defect_detector }} · vùng phân tích: {{ result.roi_source === 'film_roi' ? 'film_roi' : 'toàn ảnh' }}
+          · {{ result.timing_ms.total.toFixed(0) }} ms</p>
+        <p class="note" v-for="n in result.notes" :key="n">{{ n }}</p>
+        <div class="row">
+          <button @click="downloadJson">Tải JSON</button>
+          <button @click="downloadImage">Tải ảnh đã vẽ</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel viewer">
+      <div class="stage" v-if="imageUrl">
+        <img :src="imageUrl" @load="onImgLoad" alt="Ảnh film">
+        <svg v-if="result" :viewBox="`0 0 ${result.width} ${result.height}`" preserveAspectRatio="none">
+          <g v-if="showLayout">
+            <g v-for="r in layoutBoxes" :key="r.key">
+              <rect :x="r.bbox[0]" :y="r.bbox[1]" :width="r.bbox[2] - r.bbox[0]" :height="r.bbox[3] - r.bbox[1]"
+                    :stroke="r.color" :stroke-width="stroke" fill="none" stroke-dasharray="12 6"/>
+              <text v-if="showLabels" :x="r.bbox[0] + 4" :y="r.bbox[1] + fontSize" :font-size="fontSize" :fill="r.color" class="lbl">{{ r.label }}</text>
+            </g>
+          </g>
+          <g v-for="d in visibleDefects" :key="d.idx" @mouseenter="hover = d.idx" @mouseleave="hover = null">
+            <rect :x="d.bbox[0]" :y="d.bbox[1]" :width="d.bbox[2] - d.bbox[0]" :height="d.bbox[3] - d.bbox[1]"
+                  :stroke="color(d.cls)" :stroke-width="hover === d.idx ? stroke * 2 : stroke" fill="transparent"/>
+            <g v-if="showLabels || hover === d.idx">
+              <rect :x="d.bbox[0]" :y="labelY(d)" :width="labelW(d)" :height="fontSize * 1.3" :fill="color(d.cls)"/>
+              <text :x="d.bbox[0] + fontSize * 0.25" :y="labelY(d) + fontSize" :font-size="fontSize" fill="#fff">{{ d.cls }} {{ d.conf_pct }}</text>
+            </g>
+          </g>
+        </svg>
+      </div>
+      <div class="empty" v-else>Chưa có ảnh</div>
+    </section>
+
+    <section class="panel details" v-if="result">
+      <h2>Khuyết tật ({{ visibleDefects.length }})</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Class</th><th>Tin cậy</th><th>ResNet50</th><th>BBox (x1, y1, x2, y2)</th></tr></thead>
+          <tbody>
+            <tr v-for="d in visibleDefects" :key="d.idx" :class="{ hl: hover === d.idx }" @mouseenter="hover = d.idx" @mouseleave="hover = null">
+              <td>{{ d.idx + 1 }}</td>
+              <td><i class="dot" :style="{ background: color(d.cls) }"></i>{{ d.cls }}</td>
+              <td><div class="bar"><span :style="{ width: d.conf * 100 + '%', background: color(d.cls) }"></span></div>{{ d.conf_pct }}</td>
+              <td :title="probsTitle(d)">{{ d.resnet_top ? d.resnet_top + ' ' + d.resnet_top_pct : '—' }}</td>
+              <td class="mono">{{ d.bbox.map(v => Math.round(v)).join(', ') }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Thông tin mối hàn (OCR)</h2>
+      <p class="muted" v-if="!result.weld_info.length">Không có vùng weld_info.</p>
+      <div class="ocr" v-for="(w, i) in result.weld_info" :key="'w' + i">
+        <div class="ocr-head">weld_info #{{ i + 1 }} · {{ w.conf_pct }}
+          <span v-if="w.ocr"> · xoay {{ w.ocr.rotation_ccw_deg }}°</span>
+          <button v-if="w.ocr && w.ocr.text_raw" class="link" @click="copy(w.ocr.text_raw)">Sao chép</button>
+        </div>
+        <template v-if="w.ocr">
+          <div class="ocr-row" v-for="(r, j) in w.ocr.rows" :key="j"><code>{{ r.text }}</code><span>{{ r.conf_pct }}</span></div>
+          <p class="muted small" v-if="w.ocr.excluded_lines.length">Bỏ vì nằm trong film_roi (ASTM/IQI):
+            {{ w.ocr.excluded_lines.map(l => l.text).join(', ') }}</p>
+        </template>
+        <p class="muted small" v-else>Chưa đọc chữ (OCR chưa bật).</p>
+      </div>
+      <p class="muted small">Chữ hiển thị nguyên văn OCR đọc được; hãy đối chiếu với film gốc.</p>
+    </section>
+  </main>
+</div>
+</script>
+<script src="/ui/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,51 @@
+# Cấu hình suy luận. Các giá trị khớp với CFG của notebook Weld_RT_AI.ipynb (RUN_MODE='full').
+# Nếu có weights/config_final.json (xuất từ notebook) thì tham số model được đọc từ file đó và ghi đè phần dưới.
+
+class_names: [BT, Debris, ER, P, Ti, Other]   # thứ tự = class id lúc train
+main_class_ids: [0, 1, 2, 3, 4]               # Other chỉ báo cáo kèm
+device: auto                                  # auto | cpu | cuda
+
+inference:
+  conf_min: 0.10        # ngưỡng hiển thị/xuất: box < 10% bị bỏ
+  max_det: 300
+  nms_iou: 0.5          # NMS giữa các vùng film_roi chồng nhau
+  default_detector: YOLO26
+
+yolo:
+  weights: weights/yolo26_best.pt
+  imgsz: 1280
+
+frcnn:
+  weights: weights/faster_rcnn_best.pt
+  min_size: 720
+  max_size: 1280
+  anchor_sizes: [[16], [32], [64], [128], [256]]
+  aspect_ratios: [0.5, 1.0, 2.0]
+
+resnet:
+  weights: weights/resnet50_best.pt
+  img: 224
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+
+crop:                   # crop ngữ cảnh cho ResNet50 (giống giai đoạn 4.1)
+  context: 2.0
+  min_side: 64
+  out: 224
+
+layout:                 # giai đoạn 9: detector bố cục (tuỳ chọn, chưa có thì bỏ qua)
+  weights: weights/layout_best.pt
+  imgsz: 1280
+  names: [film_roi, weld_info]
+
+ocr:
+  enabled: true         # cần cài requirements-ocr.txt; thiếu thư viện thì tự tắt
+  lang: en
+  rotations: [0, 3, 1, 2]   # số lần np.rot90 (ngược chiều kim đồng hồ); 3 = xoay 90° theo chiều kim đồng hồ
+  pad: 0.04
+  min_side: 96
+  row_overlap: 0.5
+
+api:
+  max_upload_mb: 25
+  allowed_types: [image/jpeg, image/png, image/bmp, image/tiff]

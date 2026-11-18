@@ -1,0 +1,3 @@
+# Tuỳ chọn: chỉ cần khi đã có detector bố cục (weights/layout_best.pt) để đọc chữ vùng weld_info.
+paddlepaddle>=3.0
+paddleocr>=3.0,<4
