@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+# Weights lớn (>100 MB), không đưa lên git: chép tay vào weights/ (xem weights/README.md)
+weights/*.pt
+weights/*.json
+outputs/
