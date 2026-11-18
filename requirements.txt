@@ -1,5 +1,5 @@
-# Phiên bản khớp môi trường đã train (environment.json của notebook).
-# Máy chỉ có CPU: cài torch bản CPU trước cho nhẹ (xem README), rồi mới cài file này.
+# Versions match the training environment (notebook environment.json).
+# CPU-only machine: install the CPU build of torch first (see README), then this file.
 torch>=2.6
 torchvision>=0.21
 ultralytics==8.4.215

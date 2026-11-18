@@ -58,6 +58,8 @@ pip install -e .
 
 Trên Linux/macOS thay dòng `activate` bằng `source .venv/bin/activate`.
 
+Nếu `pip` báo `UnicodeDecodeError ... cp1252`, chạy `set PYTHONUTF8=1` (cmd) hoặc `$env:PYTHONUTF8=1` (PowerShell) rồi cài lại. Các file requirements đã để ASCII nên bình thường không gặp lỗi này.
+
 OCR (chỉ cần khi đã có `weights/layout_best.pt`): `pip install -r requirements-ocr.txt`. Lần chạy đầu PaddleOCR cần Internet để tải model.
 
 ## Chép weights

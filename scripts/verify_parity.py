@@ -44,7 +44,7 @@ def load_test_gt(root: Path, manifest: Path):
     for r in t.itertuples():
         img = root / r.orig_split / 'images' / r.file
         W, H = load_image(str(img)).size
-        rows = [l.split() for l in (root / r.orig_split / 'labels' / (img.stem + '.txt')).read_text().splitlines() if l.strip()]
+        rows = [l.split() for l in (root / r.orig_split / 'labels' / (img.stem + '.txt')).read_text(encoding='utf-8').splitlines() if l.strip()]
         rows = [[OLD2NEW[int(v[0])]] + [float(x) for x in v[1:5]] for v in rows if int(v[0]) in OLD2NEW]
         a = np.array(rows, float).reshape(-1, 5)
         b = np.stack([(a[:, 1] - a[:, 3] / 2) * W, (a[:, 2] - a[:, 4] / 2) * H,
